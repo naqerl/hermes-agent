@@ -553,28 +553,30 @@ def _handle_complete(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
-            # Build a synchronous judge for goal_mode tasks so the
-            # completion is evaluated against the task's title/body
-            # before transitioning to done.
-            judge_fn = None
+            # Goal-mode pre-completion judge gate.
+            # Prevent workers from bypassing the auxiliary judge by
+            # calling kanban_complete before acceptance criteria are met.
             task = kb.get_task(conn, tid)
             if task is not None and task.goal_mode:
-                from hermes_cli.goals import judge_goal as _judge
-
-                def _judge_fn(goal: str, response: str):
-                    try:
-                        verdict, reason, _ = _judge(goal, response)
-                        return verdict, reason or "no reason"
-                    except Exception:
-                        logger.warning(
-                            "judge_goal call failed for goal_mode task %s; "
-                            "allowing completion to proceed (fail-open)",
-                            tid,
-                            exc_info=True,
+                try:
+                    from hermes_cli.goals import judge_goal
+                    verdict, reason, _ = judge_goal(
+                        goal=f"{task.title}\n\n{task.body or ''}".strip(),
+                        last_response=(summary or result or "").strip(),
+                    )
+                    if verdict != "done":
+                        return tool_error(
+                            f"Goal completion rejected by judge: {reason}. "
+                            f"To proceed, either: (1) provide explicit acceptance "
+                            f"evidence in your summary matching the task's criteria, "
+                            f"or (2) create continuation tasks with parent={tid} "
+                            f"and keep this task alive."
                         )
-                        return "done", "judge unavailable, allowing completion"
-
-                judge_fn = _judge_fn
+                except Exception as judge_exc:
+                    logger.warning(
+                        "goal judge check failed for task %s, allowing completion: %s",
+                        tid, judge_exc,
+                    )
 
             try:
                 ok = kb.complete_task(
@@ -582,7 +584,6 @@ def _handle_complete(args: dict, **kw) -> str:
                     result=result, summary=summary, metadata=metadata,
                     created_cards=created_cards,
                     expected_run_id=_worker_run_id(tid),
-                    judge_fn=judge_fn,
                 )
             except kb.HallucinatedCardsError as hall_err:
                 return tool_error(

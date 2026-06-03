@@ -85,12 +85,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
-
-# Callback signature for goal_mode judge evaluation.
-# Args: (goal_text, worker_summary) -> (verdict, reason).
-# Verdict "done" allows the transition; anything else rejects it.
-JudgeFn = Callable[[str, str], tuple[str, str]]
+from typing import Any, Iterable, Optional
 
 from toolsets import get_toolset_names
 
@@ -3516,7 +3511,6 @@ def complete_task(
     metadata: Optional[dict] = None,
     created_cards: Optional[Iterable[str]] = None,
     expected_run_id: Optional[int] = None,
-    judge_fn: Optional[JudgeFn] = None,
 ) -> bool:
     """Transition ``running|ready -> done`` and record ``result``.
 
@@ -3539,12 +3533,6 @@ def complete_task(
     ``completion_blocked_hallucination`` event is emitted so the rejected
     attempt is auditable. When all ids verify, they are recorded on the
     ``completed`` event payload.
-
-    ``judge_fn`` is an optional callback for ``goal_mode`` tasks.
-    Signature: ``judge_fn(goal_text: str, response: str) -> (str, str)``
-    returning ``(verdict, reason)`` where ``verdict == "done"`` allows
-    the transition. When the task has ``goal_mode=True`` and no judge_fn
-    is provided, the completion is rejected with a ``ValueError``.
 
     After a successful completion, ``summary`` and ``result`` are scanned
     for prose references like ``t_deadbeefcafe`` that do not resolve.
@@ -3580,26 +3568,6 @@ def complete_task(
             raise HallucinatedCardsError(phantom_cards, task_id)
     else:
         verified_cards = []
-
-    # Gate: goal_mode tasks require synchronous judge evaluation before
-    # transitioning to done. Prevent workers from bypassing the goal
-    # loop by calling kanban_complete on the first turn.
-    task = get_task(conn, task_id)
-    if task is not None and task.goal_mode:
-        if judge_fn is None:
-            raise ValueError(
-                f"task {task_id} has goal_mode=True but no judge_fn was "
-                f"provided. A judge must evaluate the summary before "
-                f"the task can transition to done."
-            )
-        goal_text = f"{task.title}\n{task.body}" if task.body else task.title
-        response = summary or result or ""
-        verdict, reason = judge_fn(goal_text, response)
-        if verdict != "done":
-            raise ValueError(
-                f"goal_mode task {task_id} completion rejected by judge: "
-                f"{reason}"
-            )
 
     with write_txn(conn):
         if expected_run_id is None:
