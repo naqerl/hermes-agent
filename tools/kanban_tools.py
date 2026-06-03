@@ -553,24 +553,38 @@ def _handle_complete(args: dict, **kw) -> str:
     try:
         kb, conn = _connect(board=board)
         try:
+            # Build a synchronous judge for goal_mode tasks so the
+            # completion is evaluated against the task's title/body
+            # before transitioning to done.
+            judge_fn = None
+            task = kb.get_task(conn, tid)
+            if task is not None and task.goal_mode:
+                from hermes_cli.goals import judge_goal as _judge
+
+                def _judge_fn(goal: str, response: str):
+                    try:
+                        verdict, reason, _ = _judge(goal, response)
+                        return verdict, reason or "no reason"
+                    except Exception:
+                        logger.warning(
+                            "judge_goal call failed for goal_mode task %s; "
+                            "allowing completion to proceed (fail-open)",
+                            tid,
+                            exc_info=True,
+                        )
+                        return "done", "judge unavailable, allowing completion"
+
+                judge_fn = _judge_fn
+
             try:
                 ok = kb.complete_task(
                     conn, tid,
                     result=result, summary=summary, metadata=metadata,
                     created_cards=created_cards,
                     expected_run_id=_worker_run_id(tid),
+                    judge_fn=judge_fn,
                 )
             except kb.HallucinatedCardsError as hall_err:
-                # Structured rejection — surface the phantom ids so the
-                # worker can retry with a corrected list or drop the
-                # field. Audit event already landed in the DB.
-                #
-                # The task itself was NOT mutated (the gate runs before
-                # the write txn), so the worker can simply call
-                # kanban_complete again. Spell that out — without it the
-                # model often interprets a tool_error as a terminal
-                # failure and either blocks or crashes the run instead
-                # of retrying. See #22923.
                 return tool_error(
                     f"kanban_complete blocked: the following created_cards "
                     f"do not exist or were not created by this worker: "
