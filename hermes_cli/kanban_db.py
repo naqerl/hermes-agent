@@ -87,6 +87,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+# Callback signature for goal_mode judge evaluation.
+# Args: (goal_text, worker_summary) -> (verdict, reason).
+# Verdict "done" allows the transition; anything else rejects it.
+JudgeFn = Callable[[str, str], tuple[str, str]]
+
 from toolsets import get_toolset_names
 
 _log = logging.getLogger(__name__)
@@ -3511,7 +3516,7 @@ def complete_task(
     metadata: Optional[dict] = None,
     created_cards: Optional[Iterable[str]] = None,
     expected_run_id: Optional[int] = None,
-    judge_fn: Optional[Callable] = None,
+    judge_fn: Optional[JudgeFn] = None,
 ) -> bool:
     """Transition ``running|ready -> done`` and record ``result``.
 
