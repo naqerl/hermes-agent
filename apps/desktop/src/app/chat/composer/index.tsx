@@ -678,10 +678,13 @@ export function ChatBar({
         const collapsed = sel?.rangeCount === 1 && sel.isCollapsed
 
         switch (event.key) {
-          case 'f': // Alt+f = word forward
+          case 'f': // Alt+f = word forward; Ctrl+f = forward char
             if (event.altKey) {
               event.preventDefault()
               sel?.modify('move', 'forward', 'word')
+            } else if (event.ctrlKey) {
+              event.preventDefault()
+              sel?.modify('move', 'forward', 'character')
             }
             break
           case 'b': // Alt+b = word backward (Ctrl+b is voice record)
