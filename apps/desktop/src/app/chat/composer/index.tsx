@@ -62,6 +62,7 @@ import {
 } from './rich-editor'
 import { SkinSlashPopover } from './skin-slash-popover'
 import { detectTrigger, extractClipboardImageBlobs, textBeforeCaret, type TriggerState } from './text-utils'
+import { killToEndOfLine } from './composer-keybindings'
 import { ComposerTriggerPopover } from './trigger-popover'
 import type { ChatBarProps } from './types'
 import { UrlDialog } from './url-dialog'
@@ -662,6 +663,61 @@ export function ChatBar({
     // preedit fires submitDraft() and splits the message mid-word.
     if (composingRef.current || event.nativeEvent.isComposing) {
       return
+    }
+
+    // Emacs-style cursor movement and kill. Trigger popover (if open) and
+    // history navigation (above) take precedence — they're matched first.
+    // No meta/ctrl on the word moves; those are reserved for OS/IME. Plain
+    // character movement (Ctrl+f / Ctrl+b) is intentionally left to the
+    // browser default so we don't fight platform conventions.
+    if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      const editor = editorRef.current
+
+      if (editor) {
+        const sel = window.getSelection()
+        const collapsed = sel?.rangeCount === 1 && sel.isCollapsed
+
+        switch (event.key) {
+          case 'f': // Alt+f = word forward
+            if (event.altKey) {
+              event.preventDefault()
+              sel?.modify('move', 'forward', 'word')
+            }
+            break
+          case 'b': // Alt+b = word backward (Ctrl+b is voice record)
+            if (event.altKey) {
+              event.preventDefault()
+              sel?.modify('move', 'backward', 'word')
+            }
+            break
+          case 'e': // C-e = end of line
+            event.preventDefault()
+            sel?.modify('move', 'forward', 'lineboundary')
+            break
+          case 'a': // C-a = start of line
+            event.preventDefault()
+            sel?.modify('move', 'backward', 'lineboundary')
+            break
+          case 'k': // C-k = kill to end of line
+            if (collapsed && editor.textContent) {
+              event.preventDefault()
+              const caret = (() => {
+                const range = sel!.getRangeAt(0)
+                const before = document.createRange()
+                before.selectNodeContents(editor)
+                before.setEnd(range.startContainer, range.startOffset)
+                return before.toString().length
+              })()
+              const killed = killToEndOfLine(editor, caret)
+              if (killed) {
+                // Re-sync React state from DOM (the natural input handler
+                // does this; we dispatch so it runs without a real keypress).
+                editor.dispatchEvent(new InputEvent('input', { bubbles: true }))
+              }
+            }
+            break
+        }
+      }
     }
 
     // Cmd/Ctrl+Shift+K drains the next queued message. Plain Cmd/Ctrl+K is
