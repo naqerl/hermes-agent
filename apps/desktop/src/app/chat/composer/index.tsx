@@ -62,7 +62,6 @@ import {
 } from './rich-editor'
 import { SkinSlashPopover } from './skin-slash-popover'
 import { detectTrigger, extractClipboardImageBlobs, textBeforeCaret, type TriggerState } from './text-utils'
-import { killToEndOfLine } from './composer-keybindings'
 import { ComposerTriggerPopover } from './trigger-popover'
 import type { ChatBarProps } from './types'
 import { UrlDialog } from './url-dialog'
@@ -665,7 +664,7 @@ export function ChatBar({
       return
     }
 
-    // Emacs-style cursor movement and kill. Trigger popover (if open) and
+    // Emacs-style cursor movement. Trigger popover (if open) and
     // history navigation (above) take precedence — they're matched first.
     // We intercept when the composer is focused (this handler is bound to
     // the editor). Cmd is excluded so macOS app-level shortcuts still work;
@@ -675,7 +674,6 @@ export function ChatBar({
 
       if (editor) {
         const sel = window.getSelection()
-        const collapsed = sel?.rangeCount === 1 && sel.isCollapsed
 
         switch (event.key) {
           case 'f': // Alt+f = word forward; Ctrl+f = forward char
@@ -696,28 +694,6 @@ export function ChatBar({
           case 'e': // C-e = end of line
             event.preventDefault()
             sel?.modify('move', 'forward', 'lineboundary')
-            break
-          case 'a': // C-a = start of line
-            event.preventDefault()
-            sel?.modify('move', 'backward', 'lineboundary')
-            break
-          case 'k': // C-k = kill to end of line
-            if (collapsed && editor.textContent) {
-              event.preventDefault()
-              const caret = (() => {
-                const range = sel!.getRangeAt(0)
-                const before = document.createRange()
-                before.selectNodeContents(editor)
-                before.setEnd(range.startContainer, range.startOffset)
-                return before.toString().length
-              })()
-              const killed = killToEndOfLine(editor, caret)
-              if (killed) {
-                // Re-sync React state from DOM (the natural input handler
-                // does this; we dispatch so it runs without a real keypress).
-                editor.dispatchEvent(new InputEvent('input', { bubbles: true }))
-              }
-            }
             break
         }
       }
