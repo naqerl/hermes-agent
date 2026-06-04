@@ -667,10 +667,10 @@ export function ChatBar({
 
     // Emacs-style cursor movement and kill. Trigger popover (if open) and
     // history navigation (above) take precedence — they're matched first.
-    // No meta/ctrl on the word moves; those are reserved for OS/IME. Plain
-    // character movement (Ctrl+f / Ctrl+b) is intentionally left to the
-    // browser default so we don't fight platform conventions.
-    if (!event.metaKey && !event.ctrlKey && !event.shiftKey) {
+    // We intercept when the composer is focused (this handler is bound to
+    // the editor). Cmd is excluded so macOS app-level shortcuts still work;
+    // Shift+letter is text selection, not movement.
+    if (!event.metaKey && !event.shiftKey) {
       const editor = editorRef.current
 
       if (editor) {
@@ -679,16 +679,16 @@ export function ChatBar({
 
         switch (event.key) {
           case 'f': // Alt+f = word forward; Ctrl+f = forward char
-            if (event.altKey) {
+            if (event.altKey && !event.ctrlKey) {
               event.preventDefault()
               sel?.modify('move', 'forward', 'word')
-            } else if (event.ctrlKey) {
+            } else if (event.ctrlKey && !event.altKey) {
               event.preventDefault()
               sel?.modify('move', 'forward', 'character')
             }
             break
           case 'b': // Alt+b = word backward (Ctrl+b is voice record)
-            if (event.altKey) {
+            if (event.altKey && !event.ctrlKey) {
               event.preventDefault()
               sel?.modify('move', 'backward', 'word')
             }
