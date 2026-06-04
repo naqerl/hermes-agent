@@ -691,10 +691,6 @@ export function ChatBar({
               sel?.modify('move', 'backward', 'word')
             }
             break
-          case 'e': // C-e = end of line
-            event.preventDefault()
-            sel?.modify('move', 'forward', 'lineboundary')
-            break
         }
       }
     }
